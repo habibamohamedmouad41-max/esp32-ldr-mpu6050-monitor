@@ -1,0 +1,122 @@
+// Libraries
+#include <WiFi.h>
+#include <WebServer.h>
+#include <Wire.h>
+#include <Adafruit_MPU6050.h>
+#include <Adafruit_Sensor.h>
+#include <PubSubClient.h>
+
+// Wifi username and password
+const char* ssid = "Wokwi-GUEST";
+const char* password = "";
+const char* broker="broker.hivemq.com";
+const char* topic="flight-monitor-esp32-6f29a1/data";
+
+WiFiClient wifiClient;
+PubSubClient mqtt(wifiClient);
+
+
+int ldrPin = 32;
+
+int16_t readSensorValue(){
+  uint16_t highByte = (uint8_t)Wire.read();
+  uint16_t lowByte= (uint8_t)Wire.read();
+  return (int16_t)((highByte << 8) | lowByte);
+}
+
+
+WebServer server(80);
+Adafruit_MPU6050 mpu;
+
+
+int ldrValue = 0;
+float ax, ay, az;
+float gx, gy, gz;
+
+
+void handleHomePage() {
+  String page = "<html><head><title>ESP32 Sensors</title>";
+  page += "<style>body{font-family:Arial; text-align:center; background:#f2f2f2;} .card{border:1px solid black; background:white; padding:15px; margin:10px;}</style>";
+  page += "<meta http-equiv='refresh' content='2'>"; 
+  page += "</head><body>";
+  page += "<h1>ESP32 Sensor Reading</h1>";
+
+  page += "<div class='card'><h2>Light Intensity - LDR</h2>";
+  page += "<p>Raw Value: " + String(ldrValue) + "</p>";
+  page += "<p>Light is: " + String(ldrValue < 1000 ? "Bright" : "Dark") + "</p>";
+  page += "</div>";
+
+  page += "<div class='card'><h2>Acceleration (m/s2)</h2>";
+  page += "<p>X: " + String(ax) + "</p>";
+  page += "<p>Y: " + String(ay) + "</p>";
+  page += "<p>Z: " + String(az) + "</p>";
+  page += "</div>";
+
+  page += "<div class='card'><h2>Angular Velocity - Gyro (deg/sec)</h2>";
+  page += "<p>X: " + String(gx) + "</p>";
+  page += "<p>Y: " + String(gy) + "</p>";
+  page += "<p>Z: " + String(gz) + "</p>";
+  page += "</div>";
+
+  page += "</body></html>";
+
+  server.send(200, "text/html", page);
+}
+
+void setup() {
+  Serial.begin(115200);
+  
+  pinMode(ldrPin, INPUT);
+  Wire.begin(21, 22);
+
+  if (!mpu.begin()) {
+    Serial.println("MPU6050 not found!");
+    while (1) delay(10);
+  }
+  Serial.println("MPU6050 found");
+
+  mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
+  mpu.setGyroRange(MPU6050_RANGE_500_DEG);
+  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("");
+  Serial.println("WiFi Connected");
+  Serial.print("IP Address is: ");
+  Serial.println(WiFi.localIP());
+  Serial.println("Open this IP in your browser");
+
+  server.on("/", handleHomePage);
+  server.begin();
+}
+
+void loop() {
+  server.handleClient(); 
+
+  ldrValue = analogRead(ldrPin);
+
+  sensors_event_t a, g, temp;
+  mpu.getEvent(&a, &g, &temp);
+
+  ax = a.acceleration.x;
+  ay = a.acceleration.y;
+  az = a.acceleration.z;
+
+  gx = g.gyro.x * 57.29;
+  gy = g.gyro.y * 57.29;
+  gz = g.gyro.z * 57.29;
+
+  Serial.print("LDR: ");
+  Serial.print(ldrValue);
+  Serial.print(" | Acc: ");
+  Serial.print(ax); Serial.print(", "); Serial.print(ay); Serial.print(", "); Serial.print(az);
+  Serial.print(" | Gyro: ");
+  Serial.print(gx); Serial.print(", "); Serial.print(gy); Serial.print(", "); Serial.println(gz);
+
+  delay(500);
+}
